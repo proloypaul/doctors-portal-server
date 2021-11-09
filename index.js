@@ -1,18 +1,44 @@
 const express = require('express')
 const { MongoClient } = require('mongodb');
-var cors = require('cors')
+const cors = require('cors')
+const admin = require("firebase-admin");
 require('dotenv').config()
 const app = express()
+const port = process.env.PORT || 3800
+
+// doctors-portal-firebase-adminsdk.json
+
+
+const serviceAccount = require('./doctors-portal-firebase-adminsdk.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
 app.use(cors())
 app.use(express.json())
 
-const port = process.env.PORT || 3800
+
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.e3dsx.mongodb.net/myFirstDatabase?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
 // console.log(uri)
+
+async function verifyToken(req, res, next) {
+    if(req.headers?.authorization?.startsWith('Bearer ')){
+        const token = req.headers?.authorization?.split(' ')[1]
+
+        try{
+            const decodedUser = await admin.auth().verifyIdToken(token)
+            req.decodedEmail = decodedUser.email 
+        }
+        catch{
+
+        }
+    }
+    next()
+}
 async function run(){
     try{
         await client.connect()
@@ -32,10 +58,12 @@ async function run(){
         })
 
         // collect loger data from database to server using loger email
-        app.get('/appointmentorders', async (req, res) => {
-            const email = req.query.email 
-            console.log( "user email", email)
-            const query = {email: email}
+        app.get('/appointmentorders', verifyToken, async (req, res) => {
+            const email = req.query.email
+            // console.log( "user email", email)
+            const date = new Date(req.query.date).toLocaleDateString() 
+            // console.log("apointment date", date)
+            const query = {email: email, date: date}
             // console.log(query)
             const cursor = appointmentOrderCollection.find(query)
             const result = await cursor.toArray() 
@@ -61,7 +89,45 @@ async function run(){
             res.json(result)
         });
 
-        
+        // put method to update user dataabase and set role in database
+        app.put('/users/admin', verifyToken, async(req, res) => {
+            const admin = req.body 
+            // console.log(admin)
+            // console.log("user jwt token", req.headers.authorization)
+            // console.log('using jwt take email', req.decodedEmail)
+            const requester = req.decodedEmail
+            if(requester){
+                const requesterAccount = await userCollection.findOne({email: requester})
+                if(requesterAccount.role === 'admin'){
+                    const filter = {email: admin.email} 
+                    const updateDoc = {$set: {role: "admin"}}
+                    const result = await userCollection.updateOne(filter, updateDoc)
+                    res.json(result)
+                }
+            }
+            else{
+                res.status(403).json({message: "you don't have access to make admin"})
+            }
+            // const filter = {email: admin.email} 
+            // const updateDoc = {$set: {role: "admin"}}
+            // const result = await userCollection.updateOne(filter, updateDoc)
+            // res.json(result)
+        });
+
+        // get method to check admin 
+        app.get('/users/:email', async (req, res) => {
+            const email = req.params.email 
+            // console.log(email)
+            const query = {email: email}
+            const result = await userCollection.findOne(query)
+            let isAdmin = false 
+            if(result?.role === 'admin'){
+                isAdmin = true 
+            }
+            res.json({admin: isAdmin})
+        })
+
+       
     }finally{
         // await client.close()
     }
@@ -74,29 +140,3 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
     console.log("doctors portal server port", port)
 })
-
-
-// import React from "react";
-// import isWeekend from "date-fns/isWeekend";
-// import TextField from "@mui/material/TextField";
-// import AdapterDateFns from "@mui/lab/AdapterDateFns";
-// import LocalizationProvider from "@mui/lab/LocalizationProvider";
-// import StaticDatePicker from "@mui/lab/StaticDatePicker";
-
-// const Calender = ({ date, setDate }) => {
-//   return (
-//     <LocalizationProvider dateAdapter={AdapterDateFns}>
-//       <StaticDatePicker
-//         displayStaticWrapperAs="desktop"
-//         value={date}
-      
-//  <LocalizationProvider dateAdapter={AdapterDateFns}>
-//       <StaticDatePicker
-//         displayStaticWrapperAs="desktop"
-//         value={date}
-//         onChange={(newValue) => {
-//           setDate(newValue);
-//         }}
-//         renderInput={(params) => <TextField {...params} />}
-//       />
-//     </LocalizationProvider>
