@@ -1,8 +1,11 @@
 const express = require('express')
 const { MongoClient } = require('mongodb');
+const ObjectId = require('mongodb').ObjectId
 const cors = require('cors')
+const fileUpload = require('express-fileupload')
 const admin = require("firebase-admin");
 require('dotenv').config()
+const stripe = require('stripe')(process.env.STRIPE_SECRET)
 const app = express()
 const port = process.env.PORT || 3800
 
@@ -17,6 +20,7 @@ admin.initializeApp({
 
 app.use(cors())
 app.use(express.json())
+app.use(fileUpload())
 
 
 
@@ -89,7 +93,7 @@ async function run(){
             res.json(result)
         });
 
-        // put method to update user dataabase and set role in database
+        // put method to update user database and set role in database
         app.put('/users/admin', verifyToken, async(req, res) => {
             const admin = req.body 
             // console.log(admin)
@@ -125,6 +129,40 @@ async function run(){
                 isAdmin = true 
             }
             res.json({admin: isAdmin})
+        })
+
+        // payment related server site code  find pay order id 
+        app.get('/appointmentorders/:id', async (req, res) => {
+            const payId = req.params.id
+            const query = {_id: ObjectId(payId)}
+            const result = await appointmentOrderCollection.findOne(query)
+            res.json(result)
+        })
+
+        app.post('/create-payment-intent', async (req, res) => {
+            const paymentInfo = req.body;
+            const amount = paymentInfo.price * 100; 
+
+            const paymentIntent = await stripe.paymentIntents.create({
+                currency : 'usd',
+                amount : amount,
+                payment_method_types: ['card']
+            });
+
+            res.json({clientSecret: paymentIntent.client_secret});
+        })
+
+        app.put('/appointmentorders/:id', async (req, res) => {
+            const paymentId = req.params.id 
+            const paymentData = req.body 
+            const filter = {_id: ObjectId(paymentId)}
+            const updateDoc = {
+                $set: {payment: paymentData}
+            }
+
+            const result = await appointmentOrderCollection.updateOne(filter, updateDoc)
+
+            res.json(result)
         })
 
        
